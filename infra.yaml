@@ -1,0 +1,53 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Domain and certificate infrastructure for storr.build
+
+Parameters:
+  StorrBuildHostedZoneId:
+    Type: String
+    Description: The ID of the Hosted Zone created by AWS when the domain was purchased.
+
+Resources:
+  # Certificate for storr.build + *.storr.build + *.preview.storr.build.
+  # The wildcard *.storr.build alone does NOT cover the apex, so both are kept
+  # as certificate domains (DomainName + SubjectAlternativeNames).
+  #
+  # DomainValidationOptions must NOT list both storr.build and *.storr.build:
+  # ACM generates the identical DNS validation CNAME for a base domain and its
+  # wildcard (see the ACM DNS validation docs), so listing both makes the ACM
+  # CloudFormation handler submit two changes for the same Route 53 record in
+  # one batch, which Route 53 rejects with "invalid set of changes for a
+  # resource record set". The single storr.build entry creates the shared record
+  # that validates both the apex and *.storr.build. *.preview.storr.build is a
+  # distinct domain and keeps its own entry.
+  StorrBuildWildCardCertificate:
+    Type: 'AWS::CertificateManager::Certificate'
+    Properties:
+      DomainName: storr.build
+      SubjectAlternativeNames:
+        - '*.storr.build'
+        - '*.preview.storr.build'
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: storr.build
+          HostedZoneId: !Ref StorrBuildHostedZoneId
+        - DomainName: '*.preview.storr.build'
+          HostedZoneId: !Ref StorrBuildHostedZoneId
+
+  # Cross-stack contract for every storr.build consumer (storr-infra app and
+  # storr-saas marketing site). Those stacks resolve
+  # {{resolve:ssm:/storr/acm/cert-arn}} instead of each requesting their own
+  # certificate for storr.build, whose DNS validation records would otherwise
+  # collide in the shared hosted zone. This stack is the sole owner of the
+  # certificate and of this parameter.
+  CertArnParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /storr/acm/cert-arn
+      Type: String
+      Value: !Ref StorrBuildWildCardCertificate
+
+Outputs:
+  WildCardCertificateArn:
+    Value: !Ref StorrBuildWildCardCertificate
+    Export:
+      Name: StorrBuildWildCard-CertificateArn

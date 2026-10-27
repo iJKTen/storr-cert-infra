@@ -1,0 +1,3 @@
+template-file-path: infra.yaml
+parameters:
+  StorrBuildHostedZoneId: Z08719331LNFPKO1PP221
